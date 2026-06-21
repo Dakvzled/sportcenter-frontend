@@ -5,7 +5,7 @@ import {
   User, LogOut, History, Home,
   LayoutDashboard, Shield
 } from 'lucide-react';
-import { createBooking } from '../../api/bookingService'; // Hanya mengimpor yang dipakai agar tidak error
+import { createBooking } from '../../api/bookingService';
 
 type CourtType = 'badminton' | 'voli' | 'futsal' | 'mini-soccer' | 'basket';
 type BookingStatus = 'PENDING' | 'WAITING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED' | 'PAYMENT_REJECTED';
@@ -32,6 +32,7 @@ export default function CourtBookingSystem() {
   const [dbCourts, setDbCourts] = useState<any[]>([]);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  const [myBookings, setMyBookings] = useState<any[]>([]);
 
   // 1. Bersihkan pilihan jam jika user ganti lapangan/tanggal
   useEffect(() => {
@@ -72,6 +73,32 @@ export default function CourtBookingSystem() {
     fetchLapangan();
   }, []);
 
+  // 4. FETCH: Tarik Riwayat Booking Pribadi untuk Dashboard
+  useEffect(() => {
+    if (currentPage === 'dashboard') {
+      const fetchMyBookings = async () => {
+        try {
+          const token = localStorage.getItem('token_akses');
+          if (!token) return;
+
+          const response = await fetch('http://127.0.0.1:8000/api/bookings/', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setMyBookings(data);
+          }
+        } catch (error) {
+          console.error("Gagal menarik riwayat booking:", error);
+        }
+      };
+      fetchMyBookings();
+    }
+  }, [currentPage]);
+
   const toggleSlot = (time: string) => {
     setSelectedSlots(prev => 
       prev.includes(time) 
@@ -111,34 +138,42 @@ export default function CourtBookingSystem() {
     }
   };
 
-  // 🔥 FUNGSI PEMESANAN AKTIF (POST KE DJANGO) 🔥
   const handleBookingSubmit = async () => {
     if (selectedSlots.length === 0) {
       alert("Pilih minimal 1 jam jadwal yang tersedia terlebih dahulu!");
       return;
     }
     
+    const sortedSlots = [...selectedSlots].sort();
+    const startTime = sortedSlots[0];
+    
+    const lastSlotHour = parseInt(sortedSlots[sortedSlots.length - 1].split(':')[0]);
+    const endTime = `${(lastSlotHour + 1).toString().padStart(2, '0')}:00`;
+
     const bookingData = {
-      field_id: selectedCourt,
-      date: selectedDate.toISOString().split('T')[0],
-      time_start: selectedSlots[0]
+      field: selectedCourt,
+      booking_date: selectedDate.toISOString().split('T')[0],
+      start_time: startTime,
+      end_time: endTime,
+      participants_count: 10,
+      notes: "Pemesanan dari Web React"
     };
 
     try {
       const result = await createBooking(bookingData);
-      if (result.message || result.id) {
+      if (result.id) {
         alert("Booking Berhasil! Silakan cek dashboard.");
         setCurrentPage('dashboard');
-        setSelectedSlots([]); // Reset setelah berhasil
+        setSelectedSlots([]);
       } else {
-        alert("Gagal: " + (result.error || "Terjadi kesalahan sistem"));
+        console.log("Pesan Penolakan Django:", result);
+        alert("Token anda sudah berakhir, silakan melakukan login ulang atau tuntaskan pembayaran terlebih dahulu sebelum melakukan pemesanan.");
       }
     } catch (err) {
       alert("Tidak bisa terhubung ke server backend.");
     }
   };
 
-  // 4. GENERATE JADWAL AKURAT (Berdasarkan Database)
   const generateTimeSlots = (): TimeSlot[] => {
     const slots: TimeSlot[] = [];
     for (let hour = 6; hour <= 22; hour++) {
@@ -155,7 +190,6 @@ export default function CourtBookingSystem() {
 
   const renderLandingPage = () => (
     <div className="min-h-screen bg-white">
-      {/* Hero Section */}
       <div className="relative h-[700px] bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#334155] overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-10 w-64 h-64 bg-[#22c55e] rounded-full blur-3xl"></div>
@@ -191,7 +225,6 @@ export default function CourtBookingSystem() {
         </div>
       </div>
 
-      {/* Features Section */}
       <div className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
@@ -224,7 +257,6 @@ export default function CourtBookingSystem() {
         </div>
       </div>
 
-      {/* All Courts Section */}
       <div className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
@@ -250,7 +282,6 @@ export default function CourtBookingSystem() {
         </div>
       </div>
 
-      {/* CTA Section */}
       <div className="py-24 bg-gradient-to-br from-[#0f172a] to-[#1e293b] text-white">
         <div className="max-w-4xl mx-auto px-4 text-center">
           <h2 className="mb-6">Siap untuk Bermain?</h2>
@@ -287,22 +318,57 @@ export default function CourtBookingSystem() {
                 <h3 className="mb-4 flex items-center gap-2">
                   <Filter className="w-5 h-5" /> Filter Pencarian
                 </h3>
-                <div className="space-y-4">
+                <div className="space-y-6">
+                  
+                  {/* WIDGET PEMILIHAN LAPANGAN BERGAMBAR */}
                   <div>
-                    <label className="block text-sm mb-2">Jenis Lapangan</label>
-                    <select
-                      value={selectedCourt || ''}
-                      onChange={(e) => setSelectedCourt(e.target.value)}
-                      className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-[#22c55e] outline-none"
-                    >
-                      <option value="">Pilih Lapangan</option>
-                      {dbCourts.map(court => (
-                        <option key={court.id} value={court.id}>{court.name}</option>
-                      ))}
-                    </select>
+                    <label className="block text-sm font-semibold mb-3">Pilih Lapangan</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {dbCourts.map(court => {
+                        const isSelected = String(selectedCourt) === String(court.id);
+                        const imageUrl = court.image 
+                          ? (court.image.startsWith('http') ? court.image : `http://127.0.0.1:8000${court.image.startsWith('/media/') ? '' : '/media/'}${court.image}`) 
+                          : 'https://via.placeholder.com/150?text=No+Image';
+
+                        return (
+                          <button
+                            key={court.id}
+                            onClick={() => {
+                              setSelectedCourt(court.id);
+                              setSelectedSlots([]); 
+                            }}
+                            className={`relative overflow-hidden rounded-xl border-2 text-left transition-all duration-200 group ${
+                              isSelected 
+                                ? 'border-[#22c55e] ring-4 ring-[#22c55e]/20 shadow-md scale-[1.02]' 
+                                : 'border-transparent hover:border-gray-300 hover:shadow-sm grayscale-[30%]'
+                            }`}
+                          >
+                            <img 
+                              src={imageUrl} 
+                              alt={court.name} 
+                              className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-110"
+                              onError={(e) => {
+                                e.currentTarget.src = 'https://via.placeholder.com/150?text=Image+Error';
+                              }}
+                            />
+                            <div className={`absolute inset-x-0 bottom-0 p-2 text-xs font-bold text-center transition-colors ${
+                              isSelected ? 'bg-[#22c55e] text-white' : 'bg-black/70 text-white group-hover:bg-black/80'
+                            }`}>
+                              {court.name}
+                            </div>
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-white rounded-full">
+                                <CheckCircle className="w-4 h-4 text-[#22c55e]" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-sm mb-2">Tanggal</label>
+                    <label className="block text-sm font-semibold mb-2">Tanggal</label>
                     <input
                       type="date"
                       value={selectedDate.toISOString().split('T')[0]}
@@ -313,7 +379,7 @@ export default function CourtBookingSystem() {
                   </div>
                 </div>
                 <div className="mt-6 pt-6 border-t">
-                  <h4 className="text-sm mb-3">Keterangan Status:</h4>
+                  <h4 className="text-sm mb-3 font-semibold">Keterangan Status:</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 bg-green-50 border-2 border-green-500 rounded"></div>
@@ -418,21 +484,99 @@ export default function CourtBookingSystem() {
       </div>
     );
   };
+  const CountdownTimer = ({ deadline }: { deadline: string }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = new Date(deadline).getTime() - now;
+
+      if (distance < 0) {
+        clearInterval(timer);
+        setTimeLeft("Waktu Habis");
+      } else {
+        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+        setTimeLeft(`${minutes}m ${seconds}s`);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [deadline]);
+
+  return <span className="text-red-600 font-bold ml-2">{timeLeft}</span>;
+};
 
   const renderDashboard = () => (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <h2 className="mb-8 font-bold text-[#0f172a]">Dashboard Pengguna</h2>
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <p className="text-gray-600">Selamat datang! Booking Anda yang berhasil akan muncul di halaman ini.</p>
-        </div>
+        <h2 className="mb-8 text-2xl font-bold text-[#0f172a]">Dashboard Pengguna</h2>
+        
+        {myBookings.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-md p-8 text-center border-2 border-dashed border-gray-200">
+            <div className="text-4xl mb-3">📭</div>
+            <p className="text-gray-500 font-medium">Belum ada riwayat booking.</p>
+            <button 
+              onClick={() => setCurrentPage('booking')}
+              className="mt-4 text-[#22c55e] font-bold hover:underline"
+            >
+              Mulai Pesan Lapangan
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {myBookings.map((booking, index) => {
+              const courtName = dbCourts.find(c => String(c.id) === String(booking.field))?.name || `Lapangan ID: ${booking.field}`;
+
+              return (
+                <div key={index} className="bg-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow">
+                  <div className="flex justify-between items-start mb-4 border-b pb-4">
+                    <div>
+                      <h3 className="font-bold text-lg text-[#0f172a]">
+                        {courtName}
+                      </h3>
+                      <p className="text-gray-500 text-sm flex items-center gap-1 mt-1">
+                        <Calendar className="w-3 h-3" /> {booking.booking_date}
+                      </p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                      booking.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                      booking.status === 'WAITING_CONFIRMATION' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      booking.status === 'CONFIRMED' ? 'bg-green-50 text-green-700 border-green-200' :
+                      'bg-red-50 text-red-700 border-red-200'
+                    }`}>
+                      {booking.status}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3 text-sm text-gray-600 mb-6">
+                    <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                      <span className="flex items-center gap-2"><Clock className="w-4 h-4" /> Waktu:</span>
+                      <span className="font-semibold text-[#0f172a]">{booking.start_time.slice(0,5)} - {booking.end_time.slice(0,5)}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                      <span>Total Biaya:</span>
+                      <span className="font-bold text-[#22c55e]">Rp {Number(booking.total_price).toLocaleString('id-ID')}</span>
+                    </div>
+                  </div>
+
+                  {booking.status === 'PENDING' && (
+                    
+                    <button className="w-full py-2.5 bg-[#0f172a] text-white rounded-lg hover:bg-[#1e293b] transition font-semibold text-sm shadow-md flex justify-center items-center gap-2">
+                      Upload Bukti Pembayaran
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#0f172a]">
-      {/* Navigation Bar */}
       <nav className="bg-white border-b border-gray-100 sticky top-0 z-50 backdrop-blur-lg bg-white/90">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center h-20">
@@ -444,7 +588,6 @@ export default function CourtBookingSystem() {
               </div>
             </div>
 
-            {/* Desktop Menu */}
             <div className="hidden md:flex items-center gap-6">
               <button onClick={() => setCurrentPage('landing')} className="flex items-center gap-2 text-[#0f172a] hover:text-[#22c55e] transition font-medium"><Home className="w-4 h-4" /> Beranda</button>
               <button onClick={() => setCurrentPage('booking')} className="flex items-center gap-2 text-[#0f172a] hover:text-[#22c55e] transition font-medium"><Calendar className="w-4 h-4" /> Booking</button>
@@ -464,8 +607,41 @@ export default function CourtBookingSystem() {
                 </>
               ) : (
                 <>
-                  <button className="flex items-center gap-2 text-[#0f172a] hover:text-[#22c55e] transition font-medium"><User className="w-4 h-4" /> Profil</button>
-                  <button onClick={() => { localStorage.removeItem('token_akses'); setUserRole('guest'); setCurrentPage('landing'); }} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition flex items-center gap-2 font-medium border border-red-200"><LogOut className="w-4 h-4" /> Keluar</button>
+                  <div className="relative group">
+                    <button className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="w-10 h-10 bg-gradient-to-br from-[#22c55e] to-[#16a34a] rounded-full flex items-center justify-center text-white font-bold shadow-md">
+                        {email ? email.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="text-left hidden md:block">
+                        <div className="text-sm font-bold text-[#0f172a] leading-tight">
+                          {userRole === 'admin' ? 'Administrator' : 'Pengguna'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {email || 'Terautentikasi'}
+                        </div>
+                      </div>
+                    </button>
+
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform origin-top-right z-50">
+                      <div className="p-4 border-b border-gray-100">
+                        <div className="text-sm text-gray-500">Masuk sebagai:</div>
+                        <div className="text-sm font-bold text-[#0f172a] truncate">{email || 'User'}</div>
+                      </div>
+                      <div className="p-2">
+                        <button 
+                          onClick={() => {
+                            localStorage.removeItem('token_akses');
+                            setUserRole('guest');
+                            setEmail('');
+                            setCurrentPage('landing');
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors font-medium mt-1"
+                        >
+                          <LogOut className="w-4 h-4" /> Keluar Akun
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -475,7 +651,6 @@ export default function CourtBookingSystem() {
             </button>
           </div>
 
-          {/* Mobile Menu Content */}
           {isMobileMenuOpen && (
             <div className="md:hidden border-t border-gray-100 py-4 space-y-2 bg-white">
               <button onClick={() => { setCurrentPage('landing'); setIsMobileMenuOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-gray-50 rounded-lg flex items-center gap-3"><Home className="w-5 h-5 text-gray-500" /> Beranda</button>
@@ -488,26 +663,23 @@ export default function CourtBookingSystem() {
               {userRole === 'guest' ? (
                 <button onClick={() => { setIsLoginModalOpen(true); setIsMobileMenuOpen(false); }} className="w-full mt-4 px-4 py-3 bg-[#0f172a] text-white rounded-lg font-medium shadow-lg">Login</button>
               ) : (
-                <button onClick={() => { localStorage.removeItem('token_akses'); setUserRole('guest'); setCurrentPage('landing'); setIsMobileMenuOpen(false); }} className="w-full mt-4 px-4 py-3 bg-red-50 text-red-600 rounded-lg font-medium border border-red-200 flex justify-center items-center gap-2"><LogOut className="w-5 h-5" /> Keluar</button>
+                <button onClick={() => { localStorage.removeItem('token_akses'); setUserRole('guest'); setEmail(''); setCurrentPage('landing'); setIsMobileMenuOpen(false); }} className="w-full mt-4 px-4 py-3 bg-red-50 text-red-600 rounded-lg font-medium border border-red-200 flex justify-center items-center gap-2"><LogOut className="w-5 h-5" /> Keluar</button>
               )}
             </div>
           )}
         </div>
       </nav>
 
-      {/* Page Content Rendering */}
       {currentPage === 'landing' && renderLandingPage()}
       {currentPage === 'booking' && renderBookingPage()}
       {currentPage === 'dashboard' && renderDashboard()}
 
-      {/* Footer */}
       <footer className="bg-[#0f172a] text-white py-8 border-t border-gray-800 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center">
           <div className="text-sm text-gray-400">© 2026 Sport Center Solo. All rights reserved.</div>
         </div>
       </footer>
 
-      {/* 🔥 MODAL LOGIN 🔥 */}
       {isLoginModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md relative animate-in fade-in zoom-in duration-200">
