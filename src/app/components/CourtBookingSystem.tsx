@@ -49,12 +49,32 @@ export default function CourtBookingSystem() {
   useEffect(() => {
     const fetchBookings = async () => {
       if (!selectedCourt) return;
+
       const dateStr = selectedDate.toISOString().split('T')[0];
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/bookings/?field=${selectedCourt}&date=${dateStr}`);
+        const token = localStorage.getItem('token_akses');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const response = await fetch(`http://127.0.0.1:8000/api/bookings/?field=${selectedCourt}&date=${dateStr}`, { 
+          method: 'GET',
+          headers: headers
+        });
+
         if (response.ok) {
           const data = await response.json();
-          setBookedSlots(data.map((b: any) => b.time));
+          
+          const bookedTimes = data.map((b: any) => {
+            const timeData = b.start_time;
+            return timeData ? timeData.substring(0, 5) : '';
+          });
+          console.log("Jadwal yang sudah dibooking : ", bookedTimes);
+          setBookedSlots(bookedTimes);
+        } else {
+          console.log("Akses ditolak backend. Status:", response.status);
         }
       } catch (error) {
         console.error("Gagal menarik data booking:", error);
@@ -471,15 +491,20 @@ export default function CourtBookingSystem() {
                             : slot.status === 'available'
                             ? 'bg-green-50 border-green-500 hover:bg-green-100 cursor-pointer text-[#0f172a]'
                             : slot.status === 'booked'
-                            ? 'bg-red-50 border-red-500 cursor-not-allowed opacity-60 text-red-900'
+                            // BAGIAN INI YANG DIUBAH MENJADI MERAH SOLID
+                            ? 'bg-red-500 border-red-600 cursor-not-allowed text-white shadow-inner opacity-90'
                             : 'bg-gray-100 border-gray-500 cursor-not-allowed opacity-60 text-gray-500'
                         }`}
                       >
                         <div className="text-center">
-                          <div className={`text-sm mb-1 font-bold ${isSelected ? 'text-white' : ''}`}>{slot.time}</div>
-                          <div className={`text-xs font-medium ${isSelected ? 'text-blue-100' : 'text-gray-600'}`}>
+                          {/* Warna teks jam diubah jadi putih jika terbooking */}
+                          <div className={`text-sm mb-1 font-bold ${isSelected || slot.status === 'booked' ? 'text-white' : ''}`}>
+                            {slot.time}
+                          </div>
+                          {/* Keterangan diubah agar lebih jelas */}
+                          <div className={`text-xs font-medium ${isSelected ? 'text-blue-100' : slot.status === 'booked' ? 'text-red-100 font-bold' : 'text-gray-600'}`}>
                             {slot.status === 'available' && `Rp ${Number(courtPrice) / 1000}k`}
-                            {slot.status === 'booked' && 'Penuh'}
+                            {slot.status === 'booked' && 'Terbooking'}
                             {slot.status === 'blocked' && 'Tutup'}
                           </div>
                         </div>
@@ -768,7 +793,7 @@ export default function CourtBookingSystem() {
                 <label className="block text-sm font-bold mb-2 text-gray-700">Email Address</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><User className="h-5 w-5 text-gray-400" /></div>
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#22c55e] outline-none transition-all font-medium text-gray-900" placeholder="adminscsbs@gmail.com" />
+                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#22c55e] outline-none transition-all font-medium text-gray-900" placeholder="example@gmail.com" />
                 </div>
               </div>
               <div>
