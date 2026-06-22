@@ -67,10 +67,25 @@ export default function CourtBookingSystem() {
       if (!selectedCourt) return;
       const dateStr = selectedDate.toISOString().split('T')[0];
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/bookings/?field=${selectedCourt}&date=${dateStr}`);
+        const response = await fetch(`http://127.0.0.1:8000/api/bookings/availability/?field=${selectedCourt}&date=${dateStr}`);
         if (response.ok) {
           const data = await response.json();
-          setBookedSlots(data.map((b: any) => b.time));
+          
+          const bookedHours: string[] = [];
+          data.forEach((booking: any) => {
+            if (booking.status === 'CANCELLED' || booking.status === 'PAYMENT_REJECTED') {
+              return; 
+            }
+
+            const startHour = parseInt(booking.start_time.split(':')[0]);
+            const endHour = parseInt(booking.end_time.split(':')[0]);
+            
+            for (let h = startHour; h < endHour; h++) {
+              bookedHours.push(`${h.toString().padStart(2, '0')}:00`);
+            }
+          });
+          
+          setBookedSlots(bookedHours);
         }
       } catch (error) {
         console.error(error);
